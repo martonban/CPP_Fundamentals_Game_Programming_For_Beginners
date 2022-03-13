@@ -1,85 +1,35 @@
 #include "raylib.h"
 #include "raymath.h"
-
-class Character{
-public:
-    Vector2 getWorldPos() { return worldPos; }
-    void setScreenPos(int winWidth, int winHeight);
-    void tick(float delataTime);
-
-private:
-    Texture2D texture{LoadTexture("characters/knight_idle_spritesheet.png")};
-    Texture2D idle{LoadTexture("characters/knight_idle_spritesheet.png")};
-    Texture2D run{LoadTexture("characters/knight_run_spritesheet.png")};
-    Vector2 screenPos{};
-    Vector2 worldPos{};
-    //  1: Facing in the right direction
-    //  -1: Facing in the left direction
-    float rightLeft{1.f};
-    // Animation variable
-    float runningTime{};
-    int frame{};
-    const int maxFrames{6};
-    const float updateTime{1.f / 12.f};
-    const float speed{3.f};
-};
-
-void Character::setScreenPos(int winWidth, int winHeight){
-    screenPos = {
-        (float)winWidth / 2.0f - 4.0f * (0.5f * (float)texture.width / 6.0f),
-        (float)winHeight / 2.0f - 4.0f * (0.5f * (float)texture.height)};
-}
-
-void Character::tick(float delataTime){
-    Vector2 direction{};
-    if (IsKeyDown(KEY_A))
-        direction.x -= 1.0;
-    if (IsKeyDown(KEY_D))
-        direction.x += 1.0;
-    if (IsKeyDown(KEY_W))
-        direction.y -= 1.0;
-    if (IsKeyDown(KEY_S))
-        direction.y += 1.0;
-
-    if (Vector2Length(direction) != 0.0){
-        // set mapPos = mapPos-direction
-        worldPos = Vector2Add(worldPos, Vector2Scale(Vector2Normalize(direction), speed));
-        if (direction.x < 0.f){
-            rightLeft = -1.f;
-        }
-        else{
-            rightLeft = 1.f;
-        }
-        texture = run;
-    }
-    else{
-        texture = idle;
-    }
-    runningTime += delataTime;
-    if (runningTime >= updateTime){
-        frame++;
-        runningTime = 0.f;
-        if (frame > maxFrames){
-            frame = 0;
-        }
-    }
-    
-    // Draw the character
-    Rectangle source{frame * (float)texture.width / 6.f, 0.f, rightLeft * (float)texture.width / 6.f, (float)texture.height};
-    Rectangle dest{screenPos.x, screenPos.y, 5.0f * (float)texture.width / 6.0f, 5.0f * (float)texture.height};
-    DrawTexturePro(texture, source, dest, Vector2{}, 0.f, WHITE);
-}
+#include "character.h"
+#include "Prop.h"
+#include "Enemy.h"
+#include <string>
 
 int main(){
     const int windowWidth{700};
     const int windowHeight{500};
     InitWindow(windowWidth, windowHeight, "Top Down");
+    const float mapScale{4.0f};
 
     Texture2D map = LoadTexture("nature_tileset/OpenWorldMap24x24.png");
     Vector2 mapPos{0.0, 0.0};
 
-    Character knight;
-    knight.setScreenPos(windowWidth, windowHeight);
+    Character knight{windowWidth, windowHeight};
+
+    Prop props[2]{
+      Prop{Vector2{600.f, 300.f}, LoadTexture("nature_tileset/Rock.png")},
+      Prop{Vector2{400.f, 500.f}, LoadTexture("nature_tileset/Log.png")}
+    };
+
+
+
+    Enemy goblin{
+        Vector2{0,0},
+        LoadTexture("characters/goblin_idle_spritesheet.png"),
+        LoadTexture("characters/goblin_run_spritesheet.png")
+    };
+
+    goblin.setTarget(&knight);
 
     SetTargetFPS(60);
     while (!WindowShouldClose()){
@@ -90,11 +40,48 @@ int main(){
 
         // Draw the map
         DrawTextureEx(map, mapPos, 0.0, 4.0, WHITE);
-        knight.tick(GetFrameTime());
 
+        for(auto prop : props){
+            prop.render(knight.getWorldPos());
+        }
+
+
+        if (!knight.getAlive()){
+            DrawText("Game Over", 55.f, 45.f, 40, RED);
+            EndDrawing();
+            continue;
+        }else{
+            std::string knightsHealth = "Health: ";
+            knightsHealth.append(std::to_string(knight.gerHealth()), 0, 3);
+            DrawText(knightsHealth.c_str(), 55.f, 45.f, 40, RED);
+        }
+
+        knight.tick(GetFrameTime());
+        //CheckMap Pos
+        if(knight.getWorldPos().x < 0.f ||
+           knight.getWorldPos().y < 0.f ||
+           knight.getWorldPos().x + windowWidth > map.width * 4.0 ||
+           knight.getWorldPos().y + windowHeight > map.height * 4.0){
+            knight.undoMovement();
+        }
         
+        for(auto prop : props){
+            if(CheckCollisionRecs(prop.getCollisionRec(knight.getWorldPos()), knight.getCollisionRec())){
+                knight.undoMovement();
+            }
+        }
+
+        goblin.tick(GetFrameTime());
+
+        if(IsMouseButtonPressed(MOUSE_LEFT_BUTTON)){
+            if(CheckCollisionRecs(goblin.getCollisionRec(), knight.getWeaponCollisionRec())){
+                goblin.setAlive(false); 
+            }
+        }
+
 
         EndDrawing();
+
     }
     CloseWindow();
 }
